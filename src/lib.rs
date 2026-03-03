@@ -96,6 +96,7 @@ impl Default for BillboardDepth {
 }
 
 #[derive(Default, Clone, Copy, Component, ExtractComponent, Debug, Reflect)]
+#[reflect(Component)]
 #[require(BillboardDepth, VisibilityClass)]
 #[component(on_add = add_visibility_class::<Billboard>)]
 pub struct Billboard;
