@@ -34,7 +34,7 @@ pub struct BillboardTexture(pub Handle<Image>);
 ///
 /// If you are not using `TextSpan` children, set the `String` field of
 /// this struct.
-#[derive(Clone, Component, Default)]
+#[derive(Clone, Component, Default, Reflect)]
 #[require(
     Billboard,
     BillboardTextBounds,
@@ -47,6 +47,7 @@ pub struct BillboardTexture(pub Handle<Image>);
     Transform,
     Visibility
 )]
+#[reflect(Component)]
 pub struct BillboardText(pub String);
 
 impl BillboardText {
@@ -87,6 +88,7 @@ struct BillboardTextNeedsRerender;
 pub struct BillboardMesh(pub Handle<Mesh>);
 
 #[derive(Clone, Copy, Component, Debug, Reflect)]
+#[reflect(Component)]
 pub struct BillboardDepth(pub bool);
 
 impl Default for BillboardDepth {
@@ -102,6 +104,7 @@ impl Default for BillboardDepth {
 pub struct Billboard;
 
 #[derive(Default, Clone, Copy, Component, Debug, Reflect)]
+#[reflect(Component)]
 pub struct BillboardLockAxis {
     pub y_axis: bool,
     pub rotation: bool,
