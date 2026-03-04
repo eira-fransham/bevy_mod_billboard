@@ -14,6 +14,8 @@ use bevy::render::extract_component::ExtractComponent;
 use bevy::sprite::Anchor;
 use bevy::text::{LineHeight, TextRoot, TextSpanAccess};
 
+// TODO: Use `ExtendedMaterial<BillboardVertex<..>>`, we don't need to
+// have an entirely custom pipeline.
 /// Marker component for a billboarded texture.
 ///
 /// Additionally insert a [`BillboardMesh`] to function.

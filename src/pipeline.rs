@@ -14,6 +14,7 @@ use bevy::prelude::{
     default, AssetEvent, Commands, Component, Entity, Image, Mesh, Msaa, Query, Res, ResMut,
     Resource, With,
 };
+use bevy::reflect::Reflect;
 use bevy::render::extract_component::{ComponentUniforms, DynamicUniformIndex};
 use bevy::render::mesh::allocator::MeshAllocator;
 use bevy::render::mesh::{RenderMesh, RenderMeshBufferInfo};
@@ -38,6 +39,10 @@ use bevy::render::view::{
 };
 use bevy::shader::Shader;
 use bevy::sprite_render::SpriteAssetEvents;
+
+pub(crate) const DEF_VERTEX_COLOR: &str = "VERTEX_COLOR";
+pub(crate) const DEF_LOCK_Y: &str = "LOCK_Y";
+pub(crate) const DEF_LOCK_ROTATION: &str = "LOCK_ROTATION";
 
 #[derive(Clone, Copy, ShaderType, Component)]
 pub struct BillboardUniform {
@@ -72,7 +77,8 @@ pub struct BillboardViewBindGroup {
 // Reference:
 // https://github.com/bevyengine/bevy/blob/release-0.9.1/crates/bevy_sprite/src/mesh2d/mesh.rs#L282
 bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Reflect)]
+    #[reflect(opaque)]
     #[repr(transparent)]
     // NOTE: Apparently quadro drivers support up to 64x MSAA.
     // MSAA uses the highest 3 bits for the MSAA log2(sample count) to support up to 128x MSAA.
@@ -140,7 +146,8 @@ pub fn prepare_billboard_bind_group(
         return;
     };
 
-    let billboard_layout = pipeline_cache.get_bind_group_layout(&billboard_pipeline.billboard_layout);
+    let billboard_layout =
+        pipeline_cache.get_bind_group_layout(&billboard_pipeline.billboard_layout);
 
     commands.insert_resource(BillboardBindGroup {
         value: render_device.create_bind_group(
@@ -353,10 +360,6 @@ impl SpecializedMeshPipeline for BillboardPipeline {
         key: Self::Key,
         layout: &MeshVertexBufferLayoutRef,
     ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
-        const DEF_VERTEX_COLOR: &str = "VERTEX_COLOR";
-        const DEF_LOCK_Y: &str = "LOCK_Y";
-        const DEF_LOCK_ROTATION: &str = "LOCK_ROTATION";
-
         let mut shader_defs = Vec::with_capacity(4);
         let mut attributes = Vec::with_capacity(4);
 

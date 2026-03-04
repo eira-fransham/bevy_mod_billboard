@@ -7,9 +7,10 @@ use crate::text::{
     detect_billboard_text_color_change, extract_billboard_text, update_billboard_text_layout,
     BillboardTextHandles,
 };
-use crate::texture::extract_billboard_texture;
+use crate::texture::{extract_billboard_texture, BillboardMaterialExtension};
 use crate::{prelude::*, Billboard};
 use bevy::camera::CameraUpdateSystems;
+use bevy::pbr::ExtendedMaterial;
 use bevy::prelude::*;
 use bevy::render::extract_component::{ExtractComponentPlugin, UniformComponentPlugin};
 use bevy::render::render_phase::AddRenderCommand;
@@ -27,6 +28,9 @@ impl Plugin for BillboardPlugin {
 
         app.add_plugins(UniformComponentPlugin::<BillboardUniform>::default())
             .add_plugins(ExtractComponentPlugin::<Billboard>::default())
+            .add_plugins(MaterialPlugin::<
+                ExtendedMaterial<StandardMaterial, BillboardMaterialExtension>,
+            >::default())
             .register_type::<BillboardMesh>()
             .register_type::<BillboardTexture>()
             .register_type::<BillboardTextBounds>()
