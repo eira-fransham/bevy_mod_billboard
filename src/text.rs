@@ -41,7 +41,6 @@ pub fn extract_billboard_text(
             &RenderEntity,
             &ViewVisibility,
             &GlobalTransform,
-            &Transform,
             &BillboardTextHandles,
             &BillboardDepth,
             Option<&BillboardLockAxis>,
@@ -50,14 +49,14 @@ pub fn extract_billboard_text(
 ) {
     let mut batch = Vec::with_capacity(*previous_len);
 
-    for (render_entity, visibility, global_transform, transform, handles, &depth, lock_axis) in
+    for (render_entity, visibility, global_transform, handles, &depth, lock_axis) in
         &billboard_text_query
     {
         if !visibility.get() {
             continue;
         }
 
-        let uniform = calculate_billboard_uniform(global_transform, transform, lock_axis);
+        let uniform = calculate_billboard_uniform(global_transform, lock_axis);
 
         for handle_group in handles.iter() {
             // TODO: this will overwrite the render entity if we try to

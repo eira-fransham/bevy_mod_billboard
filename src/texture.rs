@@ -2,7 +2,7 @@ use bevy::{
     camera::visibility::ViewVisibility,
     ecs::system::{Commands, Local, Query},
     render::{sync_world::RenderEntity, Extract},
-    transform::components::{GlobalTransform, Transform},
+    transform::components::GlobalTransform,
 };
 
 use crate::{
@@ -20,7 +20,6 @@ pub fn extract_billboard_texture(
             &RenderEntity,
             &ViewVisibility,
             &GlobalTransform,
-            &Transform,
             &BillboardMesh,
             &BillboardTexture,
             &BillboardDepth,
@@ -34,7 +33,6 @@ pub fn extract_billboard_texture(
         render_entity,
         visibility,
         global_transform,
-        transform,
         billboard_mesh,
         billboard_texture,
         &depth,
@@ -45,7 +43,7 @@ pub fn extract_billboard_texture(
             continue;
         }
 
-        let uniform = calculate_billboard_uniform(global_transform, transform, lock_axis);
+        let uniform = calculate_billboard_uniform(global_transform, lock_axis);
 
         batch.push((
             render_entity.id(),
