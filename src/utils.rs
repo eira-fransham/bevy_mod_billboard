@@ -9,7 +9,7 @@ pub fn compute_matrix_without_rotation(global_transform: &GlobalTransform) -> Ma
     Mat4::from_cols(
         Mat4::IDENTITY.x_axis * global_scale.x,
         Mat4::IDENTITY.y_axis * global_scale.y,
-        Mat4::IDENTITY.z_axis * global_scale.z,
+        Mat4::IDENTITY.z_axis,
         global_matrix.w_axis,
     )
 }
