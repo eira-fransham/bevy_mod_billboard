@@ -54,8 +54,13 @@ fn vertex(vertex: Vertex) -> VertexOutput {
             camera_up = normalize(vec3<f32>(view.view_proj[0][1], view.view_proj[1][1], view.view_proj[2][1]));
         }
 
-        let world_space = camera_right * vertex.position.x + camera_up * vertex.position.y;
-        position = view.view_proj * billboard.model * vec4<f32>(world_space, 1.0);
+        // Scale in billboard (camera-facing) space rather than per world axis, so the
+        // billboard keeps its size regardless of view direction. `model` holds the X/Y
+        // scale on its diagonal (sign preserved for flipping) and translation in [3].
+        let scale = vec2<f32>(billboard.model[0][0], billboard.model[1][1]);
+        let world_space = camera_right * (vertex.position.x * scale.x)
+                        + camera_up * (vertex.position.y * scale.y);
+        position = view.view_proj * vec4<f32>(billboard.model[3].xyz + world_space, 1.0);
     }
 
     var out: VertexOutput;

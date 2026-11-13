@@ -5,6 +5,7 @@
 - Text layout now uses Bevy's parley-based text pipeline.
 - Shader converted from WGSL to WESL (`billboard.wesl`), as Bevy 0.20 no longer preprocesses WGSL `#ifdef`s.
 - Pipeline key stores the view's color target format instead of an HDR flag.
+- Fix billboard scale being applied along world axes instead of the billboard's own right/up axes (broke uniformly scaled text when viewed along X). Z scale is now ignored.
 
 ## [0.7.0] - 2024-07-11
 - Upgrade to Bevy 0.14 (@interwhy).
