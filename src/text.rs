@@ -2,17 +2,18 @@ use crate::pipeline::{RenderBillboardImage, RenderBillboardMesh};
 use crate::utils::calculate_billboard_uniform;
 use crate::{BillboardDepth, BillboardLockAxis, BillboardText, BillboardTextNeedsRerender};
 use bevy::asset::RenderAssetUsages;
-use bevy::color::palettes;
+use bevy::ecs::entity::EntityHashSet;
 use bevy::mesh::{Indices, PrimitiveTopology};
-use bevy::platform::collections::{HashMap, HashSet};
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use bevy::render::sync_world::RenderEntity;
 use bevy::render::Extract;
 use bevy::sprite::Anchor;
 use bevy::text::{
-    ComputedTextBlock, CosmicFontSystem, FontAtlasSet, FontHinting, PositionedGlyph, SwashCache,
-    TextBounds, TextLayoutInfo, TextPipeline, TextReader,
+    ComputedTextBlock, FontAtlasSet, FontCx, FontHinting, LayoutCx, PositionedGlyph, RemSize,
+    ScaleCx, TextBounds, TextElement, TextError, TextLayoutInfo, TextPipeline, TextReader,
 };
+use bevy::window::PrimaryWindow;
 use smallvec::SmallVec;
 
 // Uses this as reference
@@ -85,18 +86,22 @@ pub fn extract_billboard_text(
 }
 
 pub(crate) fn update_billboard_text_layout(
-    mut queue: Local<HashSet<Entity>>,
+    mut queue: Local<EntityHashSet>,
+    mut last_logical_viewport_size: Local<Vec2>,
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     fonts: Res<Assets<Font>>,
-    mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
     mut font_atlas_set: ResMut<FontAtlasSet>,
     mut text_pipeline: ResMut<TextPipeline>,
-    mut font_system: ResMut<CosmicFontSystem>,
-    mut swash_cache: ResMut<SwashCache>,
+    mut font_cx: ResMut<FontCx>,
+    mut layout_cx: ResMut<LayoutCx>,
+    mut scale_cx: ResMut<ScaleCx>,
+    rem_size: Res<RemSize>,
+    primary_window: Option<Single<&Window, With<PrimaryWindow>>>,
     mut text_query: Query<
         (
             Entity,
+            Ref<BillboardText>,
             &mut TextLayoutInfo,
             Ref<TextLayout>,
             Ref<BillboardTextBounds>,
@@ -107,14 +112,20 @@ pub(crate) fn update_billboard_text_layout(
         ),
         With<BillboardText>,
     >,
-    mut text_font_query: Query<&TextFont>,
     mut text_reader: TextReader<BillboardText>,
     mut commands: Commands,
 ) {
-    const SCALE_FACTOR: f64 = 1.0;
+    const SCALE_FACTOR: f32 = 1.0;
+
+    let logical_viewport_size = primary_window
+        .map(|window| window.resolution.size())
+        .unwrap_or(Vec2::splat(1000.));
+    let viewport_size_changed = *last_logical_viewport_size != logical_viewport_size;
+    *last_logical_viewport_size = logical_viewport_size;
 
     for (
         entity,
+        billboard_text,
         mut info,
         layout,
         bounds,
@@ -124,12 +135,15 @@ pub(crate) fn update_billboard_text_layout(
         text_needs_rerender,
     ) in &mut text_query
     {
-        if text_needs_rerender
+        // `bevy::text::detect_text_needs_rerender` does not check root text components, so
+        // changes to the `BillboardText` string itself have to be detected here.
+        if billboard_text.is_changed()
+            || text_needs_rerender
             || layout.is_changed()
             || bounds.is_changed()
             || anchor.is_changed()
-            || computed.needs_rerender()
-            || queue.remove(&entity)
+            || computed.needs_rerender(viewport_size_changed, rem_size.is_changed())
+            || (!queue.is_empty() && queue.remove(&entity))
         {
             let text_bounds = if layout.linebreak == LineBreak::NoWrap {
                 TextBounds::UNBOUNDED
@@ -144,98 +158,98 @@ pub(crate) fn update_billboard_text_layout(
                 layout.justify,
                 text_bounds,
                 SCALE_FACTOR,
-                computed.as_mut(),
-                &mut font_system,
-                FontHinting::default(),
+                &mut computed,
+                &mut font_cx,
+                &mut layout_cx,
+                logical_viewport_size,
+                *rem_size,
             ) {
-                Err(TextError::NoSuchFont) => {
-                    error!("Missing font (could still be loading)");
+                Err(
+                    TextError::NoSuchFont
+                    | TextError::NoSuchFontFamily(_)
+                    | TextError::DegenerateScaleFactor,
+                ) => {
+                    // Font could still be loading, retry next frame.
                     queue.insert(entity);
                     continue;
                 }
                 Err(err) => {
                     panic!("Fatal error when processing text: {err}.");
                 }
-                Ok(_) => (),
+                Ok(()) => (),
             };
 
             match text_pipeline.update_text_layout_info(
                 &mut info,
-                text_font_query.reborrow(),
-                SCALE_FACTOR,
                 &mut font_atlas_set,
-                &mut texture_atlases,
                 &mut images,
-                computed.as_mut(),
-                &mut font_system,
-                &mut swash_cache,
+                &mut computed,
+                &mut scale_cx,
                 text_bounds,
                 layout.justify,
+                FontHinting::default(),
             ) {
-                Err(TextError::NoSuchFont) => {
-                    error!("Missing font (could still be loading)");
+                Err(TextError::NoSuchFont | TextError::NoSuchFontFamily(_)) => {
                     queue.insert(entity);
                     continue;
                 }
                 Err(err) => {
                     panic!("Fatal error when processing text: {err}.");
                 }
-                Ok(_) => (),
+                Ok(()) => (),
             };
 
             commands
                 .entity(entity)
                 .remove::<BillboardTextNeedsRerender>();
 
+            // Colors indexed by `PositionedGlyph::section_index`, which follows the
+            // iteration order of `TextReader::iter`.
+            let section_colors: SmallVec<[[f32; 4]; 4]> = text_reader
+                .iter(entity)
+                .map(|(_, _, element)| match element {
+                    TextElement::Text { color, .. } => color.to_linear().to_f32_array(),
+                    TextElement::Box(_) => LinearRgba::WHITE.to_f32_array(),
+                })
+                .collect();
+
             let text_anchor = -(anchor.as_vec() + 0.5);
             let alignment_translation = info.size * text_anchor;
 
             let length = info.glyphs.len();
-            let mut textures = HashMap::new();
+            let mut textures: HashMap<AssetId<Image>, Vec<&PositionedGlyph>> = HashMap::new();
 
             for glyph in &info.glyphs {
-                // TODO: Maybe with clever caching, could be possible to get rid of or_insert_with,
-                // TODO: though I don't know how much of a gain it would be. Just keeping this as a note.
-                let entry = textures
-                    .entry(glyph.atlas_info.texture.clone())
-                    .or_insert_with(|| {
-                        (
-                            Vec::with_capacity(length),
-                            (
-                                texture_atlases
-                                    .get(glyph.atlas_info.texture_atlas)
-                                    .expect("Atlas should exist"),
-                                glyph.atlas_info.texture.clone(),
-                            ),
-                        )
-                    });
-
-                entry.0.push(glyph.clone());
+                textures
+                    .entry(glyph.atlas_info.texture)
+                    .or_insert_with(|| Vec::with_capacity(length))
+                    .push(glyph);
             }
 
             handles.clear();
 
-            for (glyphs, (atlas, texture)) in textures.into_values() {
-                let mut positions = Vec::with_capacity(info.glyphs.len() * 4);
-                let mut uvs = Vec::with_capacity(info.glyphs.len() * 4);
-                let mut colors = Vec::with_capacity(info.glyphs.len() * 4);
-                let mut indices = Vec::with_capacity(info.glyphs.len() * 6);
+            for (texture, glyphs) in textures {
+                let Some(atlas_size) = images.get(texture).map(|image| image.size_f32()) else {
+                    error!("Font atlas texture should exist");
+                    continue;
+                };
 
-                let mut color = palettes::css::WHITE.to_f32_array();
-                let mut current_span = usize::MAX;
+                let mut positions = Vec::with_capacity(glyphs.len() * 4);
+                let mut uvs = Vec::with_capacity(glyphs.len() * 4);
+                let mut colors = Vec::with_capacity(glyphs.len() * 4);
+                let mut indices = Vec::with_capacity(glyphs.len() * 6);
 
                 for PositionedGlyph {
                     position,
-                    size,
                     atlas_info,
-                    span_index,
+                    section_index,
                     ..
                 } in glyphs
                 {
                     let index = positions.len() as u32;
-                    let position = (position + alignment_translation) * Vec2::new(1.0, -1.0);
+                    let position = (*position + alignment_translation) * Vec2::new(1.0, -1.0);
 
-                    let half_size = size / 2.0;
+                    let half_size = atlas_info.rect.size() / 2.0;
                     let top_left = position - half_size;
                     let bottom_right = position + half_size;
 
@@ -246,10 +260,8 @@ pub(crate) fn update_billboard_text_layout(
                         [bottom_right.x, top_left.y, 0.0],
                     ]);
 
-                    let URect { min, max } = atlas.textures[atlas_info.location.glyph_index];
-                    let atlas_size = atlas.size.as_vec2();
-                    let min = min.as_vec2() / atlas_size;
-                    let max = max.as_vec2() / atlas_size;
+                    let min = atlas_info.rect.min / atlas_size;
+                    let max = atlas_info.rect.max / atlas_size;
 
                     uvs.extend([
                         [min.x, max.y],
@@ -258,16 +270,12 @@ pub(crate) fn update_billboard_text_layout(
                         [max.x, max.y],
                     ]);
 
-                    if span_index != current_span {
-                        color = text_reader
-                            .get_color(entity, span_index)
-                            .unwrap()
-                            .to_linear()
-                            .to_f32_array();
-                        current_span = span_index;
-                    }
+                    let color = section_colors
+                        .get(*section_index as usize)
+                        .copied()
+                        .unwrap_or(LinearRgba::WHITE.to_f32_array());
 
-                    colors.extend([color, color, color, color]);
+                    colors.extend([color; 4]);
 
                     indices.extend([index, index + 2, index + 1, index, index + 3, index + 2]);
                 }
@@ -320,11 +328,7 @@ pub(crate) fn detect_billboard_text_color_change(
     for span_parent in &changed_spans {
         let mut parent: Entity = span_parent.0;
 
-        loop {
-            let Ok((ent, maybe_parent, has_computed, has_span)) = computed.get_mut(parent) else {
-                break;
-            };
-
+        while let Ok((ent, maybe_parent, has_computed, has_span)) = computed.get_mut(parent) {
             if has_computed {
                 commands.entity(ent).insert(BillboardTextNeedsRerender);
                 break;

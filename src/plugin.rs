@@ -16,14 +16,17 @@ use bevy::render::render_phase::AddRenderCommand;
 use bevy::render::render_resource::SpecializedMeshPipelines;
 use bevy::render::{RenderApp, RenderStartup, RenderSystems};
 use bevy::shader::load_shader_library;
-use bevy::text::detect_text_needs_rerender;
+use bevy::asset::AssetEventSystems;
+use bevy::text::{
+    apply_text_edits, detect_text_needs_rerender, load_font_assets_into_font_collection,
+};
 use bevy::{core_pipeline::core_3d::Transparent3d, render::Render};
 
 pub struct BillboardPlugin;
 
 impl Plugin for BillboardPlugin {
     fn build(&self, app: &mut App) {
-        load_shader_library!(app, "shader/billboard.wgsl");
+        load_shader_library!(app, "shader/billboard.wesl");
 
         app.add_plugins(UniformComponentPlugin::<BillboardUniform>::default())
             .add_plugins(ExtractComponentPlugin::<Billboard>::default())
@@ -34,14 +37,15 @@ impl Plugin for BillboardPlugin {
             .add_systems(
                 PostUpdate,
                 (
-                    (
-                        detect_text_needs_rerender::<BillboardText>,
-                        detect_billboard_text_color_change,
-                    ),
+                    detect_billboard_text_color_change,
                     update_billboard_text_layout,
                 )
                     .chain()
-                    .ambiguous_with(CameraUpdateSystems),
+                    .after(detect_text_needs_rerender)
+                    .after(load_font_assets_into_font_collection)
+                    .after(apply_text_edits)
+                    .after(CameraUpdateSystems)
+                    .before(AssetEventSystems),
             );
 
         app.sub_app_mut(RenderApp)

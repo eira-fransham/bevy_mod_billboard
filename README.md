@@ -20,6 +20,7 @@ Billboard text and texture support for bevy
 
 | Bevy Version | Crate Version |
 |--------------|---------------|
+| `0.20`       | `0.8.0`       |
 | `0.14`       | `0.7.0`       |
 | `0.13`       | `0.6.0`       |
 | `0.12`       | `0.5.1`       |
@@ -43,7 +44,7 @@ Text:
 commands
     .spawn((
         BillboardText::default(),
-        TextLayout::new_with_justify(Justify::Center),
+        TextLayout::justify(Justify::Center),
         Transform::from_scale(Vec3::splat(0.0085)),
     ))
     .with_child((
@@ -70,6 +71,12 @@ commands.spawn((
 Full examples at [examples](examples).
 
 ## Changelog
+
+### [0.8.0] - Unreleased
+- Upgrade to Bevy 0.20.
+- Text layout now uses Bevy's parley-based text pipeline.
+- Shader converted from WGSL to WESL (`billboard.wesl`), as Bevy 0.20 no longer preprocesses WGSL `#ifdef`s.
+- Pipeline key stores the view's color target format instead of an HDR flag.
 
 ### [0.7.0] - 2024-07-11
 - Upgrade to Bevy 0.14 (@interwhy).

@@ -11,8 +11,9 @@ use crate::text::{BillboardTextBounds, BillboardTextHandles};
 use bevy::camera::visibility::{add_visibility_class, VisibilityClass};
 use bevy::prelude::*;
 use bevy::render::extract_component::ExtractComponent;
+use bevy::render::RenderApp;
 use bevy::sprite::Anchor;
-use bevy::text::{LineHeight, TextRoot, TextSpanAccess};
+use bevy::text::{LetterSpacing, LineHeight, TextSection};
 
 /// Marker component for a billboarded texture.
 ///
@@ -43,6 +44,7 @@ pub struct BillboardTexture(pub Handle<Image>);
     TextFont,
     TextColor,
     LineHeight,
+    LetterSpacing,
     Anchor,
     Transform,
     Visibility
@@ -56,13 +58,11 @@ impl BillboardText {
     }
 }
 
-impl TextRoot for BillboardText {}
-
-impl TextSpanAccess for BillboardText {
-    fn read_span(&self) -> &str {
+impl TextSection for BillboardText {
+    fn get_text(&self) -> &str {
         self.0.as_str()
     }
-    fn write_span(&mut self) -> &mut String {
+    fn get_text_mut(&mut self) -> &mut String {
         &mut self.0
     }
 }
@@ -98,6 +98,7 @@ impl Default for BillboardDepth {
 }
 
 #[derive(Default, Clone, Copy, Component, ExtractComponent, Debug, Reflect)]
+#[extract_app(RenderApp)]
 #[reflect(Component)]
 #[require(BillboardDepth, VisibilityClass)]
 #[component(on_add = add_visibility_class::<Billboard>)]

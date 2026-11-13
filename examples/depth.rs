@@ -20,7 +20,7 @@ fn setup_billboard(mut commands: Commands, asset_server: Res<AssetServer>) {
         BillboardText::new("depth enabled"),
         text_font.clone(),
         TextColor(Color::WHITE),
-        TextLayout::new_with_justify(Justify::Center),
+        TextLayout::justify(Justify::Center),
         Transform::from_xyz(0.0, 0.5, 0.0).with_scale(TEXT_SCALE),
     ));
 
@@ -29,7 +29,7 @@ fn setup_billboard(mut commands: Commands, asset_server: Res<AssetServer>) {
         BillboardDepth(false),
         text_font.clone(),
         TextColor(Color::WHITE),
-        TextLayout::new_with_justify(Justify::Center),
+        TextLayout::justify(Justify::Center),
         Transform::from_xyz(0.0, -0.5, 0.0).with_scale(TEXT_SCALE),
     ));
 }
@@ -37,7 +37,7 @@ fn setup_billboard(mut commands: Commands, asset_server: Res<AssetServer>) {
 // Important bits are above, the code below is for camera, reference cube and rotation
 
 #[derive(Component)]
-#[require(Transform)]
+#[require(Transform, Visibility)]
 pub struct CameraHolder;
 
 fn setup_scene(

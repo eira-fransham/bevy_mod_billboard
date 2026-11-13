@@ -1,11 +1,10 @@
 use crate::text::RenderBillboard;
 use crate::Billboard;
 use bevy::asset::{load_embedded_asset, AssetId, AssetServer, Handle};
-use bevy::core_pipeline::core_3d::Transparent3d;
+use bevy::core_pipeline::core_3d::{Transparent3d, TransparentSortingInfo3d};
 use bevy::ecs::query::ROQueryItem;
 use bevy::ecs::system::lifetimeless::{Read, SRes};
 use bevy::ecs::system::SystemParamItem;
-use bevy::image::BevyDefault;
 use bevy::log::error;
 use bevy::math::Mat4;
 use bevy::mesh::{MeshVertexBufferLayoutRef, PrimitiveTopology};
@@ -34,7 +33,8 @@ use bevy::render::render_resource::{
 use bevy::render::renderer::RenderDevice;
 use bevy::render::texture::GpuImage;
 use bevy::render::view::{
-    ExtractedView, RenderVisibleEntities, ViewTarget, ViewUniform, ViewUniformOffset, ViewUniforms,
+    texture_format_from_code, texture_format_to_code, ExtractedView, RenderVisibleEntities,
+    ViewUniform, ViewUniformOffset, ViewUniforms, COLOR_TARGET_FORMAT_MASK_BITS,
 };
 use bevy::shader::Shader;
 use bevy::sprite_render::SpriteAssetEvents;
@@ -82,7 +82,8 @@ bitflags::bitflags! {
         const DEPTH              = (1 << 1);
         const LOCK_Y             = (1 << 2);
         const LOCK_ROTATION      = (1 << 3);
-        const HDR                = (1 << 4);
+        const COLOR_TARGET_FORMAT_RESERVED_BITS =
+            Self::COLOR_TARGET_FORMAT_MASK_BITS << Self::COLOR_TARGET_FORMAT_SHIFT_BITS;
         const MSAA_RESERVED_BITS = Self::MSAA_MASK_BITS << Self::MSAA_SHIFT_BITS;
     }
 }
@@ -90,6 +91,25 @@ bitflags::bitflags! {
 impl BillboardPipelineKey {
     const MSAA_MASK_BITS: u32 = 0b111;
     const MSAA_SHIFT_BITS: u32 = 32 - Self::MSAA_MASK_BITS.count_ones();
+    const COLOR_TARGET_FORMAT_MASK_BITS: u32 = COLOR_TARGET_FORMAT_MASK_BITS;
+    const COLOR_TARGET_FORMAT_SHIFT_BITS: u32 = 4;
+
+    pub fn from_target_format(format: TextureFormat) -> Self {
+        let code = texture_format_to_code(format)
+            .expect("Texture format is not supported by the billboard pipeline")
+            as u32;
+        Self::from_bits_retain(
+            (code & Self::COLOR_TARGET_FORMAT_MASK_BITS) << Self::COLOR_TARGET_FORMAT_SHIFT_BITS,
+        )
+    }
+
+    /// Color target format of the main pass for this pipeline key.
+    pub fn target_format(&self) -> TextureFormat {
+        let code = ((self.bits() >> Self::COLOR_TARGET_FORMAT_SHIFT_BITS)
+            & Self::COLOR_TARGET_FORMAT_MASK_BITS) as u8;
+        texture_format_from_code(code)
+            .expect("Unknown bits in the color target format of the billboard pipeline key")
+    }
 
     pub fn from_msaa_samples(msaa_samples: u32) -> Self {
         let msaa_bits =
@@ -199,8 +219,12 @@ pub fn queue_billboard_texture(
 
         let rangefinder = view.rangefinder3d();
 
-        for visible_entity in visible_entities.iter::<Billboard>() {
-            let Ok((uniform, mesh, image, billboard)) = billboards.get(visible_entity.0) else {
+        for (render_entity, main_entity) in visible_entities
+            .get::<Billboard>()
+            .into_iter()
+            .flat_map(|class| class.iter_visible())
+        {
+            let Ok((uniform, mesh, image, billboard)) = billboards.get(*render_entity) else {
                 continue;
             };
 
@@ -224,9 +248,7 @@ pub fn queue_billboard_texture(
                 key |= BillboardPipelineKey::LOCK_ROTATION;
             }
 
-            if view.hdr {
-                key |= BillboardPipelineKey::HDR;
-            }
+            key |= BillboardPipelineKey::from_target_format(view.target_format);
 
             let pipeline_id = billboard_pipelines.specialize(
                 &pipeline_cache,
@@ -243,7 +265,8 @@ pub fn queue_billboard_texture(
                 }
             };
 
-            let distance = rangefinder.distance(&uniform.transform.w_axis.truncate());
+            let mesh_center = uniform.transform.w_axis.truncate();
+            let distance = rangefinder.distance(&mesh_center);
 
             image_bind_groups.values.entry(image.id).or_insert_with(|| {
                 render_device.create_bind_group(
@@ -262,9 +285,13 @@ pub fn queue_billboard_texture(
                 )
             });
 
-            transparent_phase.add(Transparent3d {
+            transparent_phase.add_transient(Transparent3d {
+                sorting_info: TransparentSortingInfo3d::Sorted {
+                    mesh_center,
+                    depth_bias: 0.0,
+                },
                 pipeline: pipeline_id,
-                entity: *visible_entity,
+                entity: (*render_entity, *main_entity),
                 draw_function: draw_transparent_billboard,
                 batch_range: 0..1,
                 extra_index: PhaseItemExtraIndex::None,
@@ -334,7 +361,7 @@ pub(crate) fn init_billboard_pipeline(mut commands: Commands, assets: Res<AssetS
         ],
     );
 
-    let shader = load_embedded_asset!(assets.as_ref(), "shader/billboard.wgsl");
+    let shader = load_embedded_asset!(assets.as_ref(), "shader/billboard.wesl");
 
     let pipeline = BillboardPipeline {
         view_layout,
@@ -397,17 +424,15 @@ impl SpecializedMeshPipeline for BillboardPipeline {
                 entry_point: None,
                 buffers: vec![vertex_buffer_layout],
                 shader_defs: shader_defs.clone(),
+                constants: vec![],
             },
             fragment: Some(FragmentState {
                 shader: self.shader.clone(),
                 entry_point: None,
                 shader_defs,
+                constants: vec![],
                 targets: vec![Some(ColorTargetState {
-                    format: if key.contains(BillboardPipelineKey::HDR) {
-                        ViewTarget::TEXTURE_FORMAT_HDR
-                    } else {
-                        TextureFormat::bevy_default()
-                    },
+                    format: key.target_format(),
                     blend: Some(BlendState {
                         color: BlendComponent {
                             src_factor: BlendFactor::SrcAlpha,
@@ -434,8 +459,8 @@ impl SpecializedMeshPipeline for BillboardPipeline {
             },
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(depth_compare),
                 stencil: default(),
                 bias: default(),
             }),
@@ -444,7 +469,7 @@ impl SpecializedMeshPipeline for BillboardPipeline {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            push_constant_ranges: vec![],
+            immediate_size: 0,
             zero_initialize_workgroup_memory: false,
         })
     }

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.0] - Unreleased
+- Upgrade to Bevy 0.20.
+- Text layout now uses Bevy's parley-based text pipeline.
+- Shader converted from WGSL to WESL (`billboard.wesl`), as Bevy 0.20 no longer preprocesses WGSL `#ifdef`s.
+- Pipeline key stores the view's color target format instead of an HDR flag.
+
 ## [0.7.0] - 2024-07-11
 - Upgrade to Bevy 0.14 (@interwhy).
 - Add Billboard marker component.
