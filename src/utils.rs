@@ -2,7 +2,7 @@ use bevy::{math::Mat4, transform::components::GlobalTransform};
 
 use crate::{pipeline::BillboardUniform, BillboardLockAxis};
 
-/// Builds the uniform matrix for non-locked billboards.
+/// Builds the uniform matrix for camera-facing billboards.
 ///
 /// The shader only reads the X/Y diagonal (scale, applied along the camera's right/up
 /// vectors) and `w_axis` (translation). Z scale is intentionally ignored: billboards are
@@ -22,7 +22,8 @@ pub fn calculate_billboard_uniform(
     global_transform: &GlobalTransform,
     lock_axis: Option<&BillboardLockAxis>,
 ) -> BillboardUniform {
-    let transform = if lock_axis.is_some() {
+    // Unless rotation is locked, we only need scale + translation.
+    let transform = if lock_axis.is_some_and(|lock| lock.rotation) {
         global_transform.to_matrix()
     } else {
         compute_matrix_without_rotation(global_transform)

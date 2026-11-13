@@ -6,6 +6,7 @@
 - Shader converted from WGSL to WESL (`billboard.wesl`), as Bevy 0.20 no longer preprocesses WGSL `#ifdef`s.
 - Pipeline key stores the view's color target format instead of an HDR flag.
 - Fix billboard scale being applied along world axes instead of the billboard's own right/up axes (broke uniformly scaled text when viewed along X). Z scale is now ignored.
+- `LOCK_Y` billboards now use the same camera-facing scaling: non-uniform scale is applied along the billboard's width/height, and the entity's rotation is ignored (previously it skewed the billboard). `BillboardLockAxis` with neither flag set now behaves like no lock.
 
 ## [0.7.0] - 2024-07-11
 - Upgrade to Bevy 0.14 (@interwhy).
